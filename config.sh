@@ -4,7 +4,7 @@
 # Mail: velt@igbmc.fr
 # Date: Avril 2015
 #------------------------------------------------------------------------------------------------------------------
-# This script contains variables that are used by the RNA-seq pipeline.
+# This file contains variables that are used by the RNA-seq pipeline.
 # Please check all these variables before launching the RNA-seq pipeline.
 # It must be loaded with a source command.
 ###################################################################################################################
@@ -122,11 +122,11 @@ FRAGMENT_SIZE="50"
 #------------------------------------------------------------------------------------------------------------------
 #name of the species used (eg Homo_sapiens or Mus_musculus) as specified in /ifs/illumina/share/Genomes directory 
 SPECIES="Homo_sapiens" #*#*#*
-#assembly version (eg mm10 or hg19) if there are spikes specify "spikes" after the assembly version (eg mm10spikes or hg19spikes)
+#assembly version (eg mm10 or hg19)
 GENOME_VERSION="hg19" #*#*#*
 ## path where all the genome's files are stocked
 GENOME_PATH="/ifs/illumina/share/Genomes"
-## path where all the genome's files are stocked
+## path where all the spike's files are stocked
 SPIKES_PATH="/ifs/illumina/share/Spikes"
 #path to bowtie indexes
 BOWTIE_INDEXES="${GENOME_PATH}/${SPECIES}/${GENOME_VERSION}/Bowtie"
@@ -153,8 +153,8 @@ STATISTICAL_ANALYSIS="yes" #*#*#*
 #options for statistical analyses
 DIST_METHOD="pearson" #distance method to use for data clustering 
 HCLUST_METHOD="average" #clustering method to use for data clustering
-THRESHOLD_LOG_FC=1
-THRESHOLD_ADJ_PVAL=0.05
+THRESHOLD_LOG_FC=1 # log2 fold-change threshold
+THRESHOLD_ADJ_PVAL=0.05 # adjusted p-value threshold
 FIT_TYPE="parametric"  #either "parametric", "local", or "mean" for the type of fitting of dispersions to the mean intensity.
 #design of the analysis
 DESIGN_FILE='$OUTDIR/Scripts/design_file.txt' # create via the ${SCRIPTSDIR}/RNAseqReport/Files/design_file.txt model file. This file containing the design of the analysis ( replicates, comparisons ... )
@@ -171,8 +171,8 @@ WINDOW_SIZE="1"
 TMP_DIR="/ifs/home/velt/tmp/"
 #path/to/bin directory. This prefix is used for all the following binary locations
 BIN="/ifs/illumina/share/software" # for furious : /ifs/illumina/share/Utilities/softwareSL
-#path/to/R binary for furious ${BIN}/R/R-3.1.1/bin/R
-RBIN="/biolo/R_surf/R-3.0.1/bin/R" # for furious : ${BIN}/R/R-3.1.1/bin/R
+#path/to/R binary => for furious, use the foolowing : ${BIN}/R/R-3.1.1/bin/R
+RBIN="/biolo/R_surf/R-3.0.1/bin/R"
 #path/to/directory where to find all the scripts needed by this pipeline
 SCRIPTSDIR="/ifs/home/velt/Git/RNAseqPipeline" #*#*#*
 #path to Utilities scripts
@@ -193,15 +193,13 @@ HTSEQ_VERSION="HTSeq/HTSeq-0.6.1/build/scripts-2.7"
 HTSEQ_PYTHONPATH="HTSeq-0.6.1-py2.7-linux-x86_64.egg"
 #path/to/RSeQC binary directory, without final
 RSEQC_VERSION="RSeQC/RSeQC-2.5/scripts" 
-#path/to/RSeQC binary directory, without final
+#path/to/RSeQC python library, => the .egg use by python to run RSeQC
 RSEQC_PYTHONPATH="RSeQC-2.5-py2.7-linux-x86_64.egg" 
 #path/to/IGV binary directory, without final /
 IGV_VERSION="IGV/IGVTools_2.2.1"
 #path/to/directory where to find all the scripts needed to generate automatic report
 REPORTDIR="${SCRIPTSDIR}/src/RNAseqReport"
 # path to python 2.7 libraries
-# pour htseq, on ajoute le nom de dossier du package python après ce pythonpath
-# donc faire attention que l'appelation des dossier .egg d'htseq ne change pas
 PYTHONPATH="${BIN}/Python/lib/python2.7/site-packages"
 ###################################################################################################################
 

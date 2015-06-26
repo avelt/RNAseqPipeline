@@ -24,11 +24,11 @@ function usage
 		    nohup sh run.sh -o outdir [-h] > \$outdir/nohup.allsamplesanalysis
 
 		Description:
-		    run.sh is main script of the RNA-seq analysis pipeline of the IGBMC Microarray and Sequencing platform.
+		    run.sh is the main script of the RNA-seq analysis pipeline of the IGBMC Microarray and Sequencing platform.
 		    Don't forget the following :
 		    - fill in correctly the config.sh file and place it in \$outdir before running run.sh script.
 		    - create a path/to/outdir/rawdata folder containing all the raw fastq files in .gz format.
-		    - if you want statistical analysis, create a \$outdir/design_file.txt file (see documentation to know how write it)
+		    - create a \$outdir/design_file.txt file (see documentation to know how write it)
 
 		Options:
 		 	-o, --outdir Outdir of the run
@@ -70,7 +70,6 @@ do
 	esac
 done
 #------------------------------------------------------------------------------------------------------------------
-
 
 
 
@@ -125,7 +124,7 @@ make_directories $OUTDIR $OUTDIR/Scripts
 cp $OUTDIR_RUN/config.sh $OUTDIR/Scripts/config.sh
 CONFIG_FILE="$OUTDIR/Scripts/config.sh"
 
-# we check if the rawdata folder exists and contains fastq files.
+# we check if the rawdata folder exists
 # otherwise, we exit the pipeline
 if [ ! -d "$OUTDIR_RUN/${DATA_FOLDER}" ]
 then
@@ -172,11 +171,13 @@ fi
 
 #------------------------------------------------------------------------------------------------------------------
 
-####################################################################################################################################
+
+
+###################################################################################################################
 # Attribution of good values to some variables of config file:
 # because in config file, these variables have the 'text' $OUTDIR
 # here, they take the 'value' of $OUTDIR, not define in config file !
-####################################################################################################################################
+#------------------------------------------------------------------------------------------------------------------
 
 eval STATISTICS_FILE=$STATISTICS_FILE
 eval GENE_BIOTYPE_FILE=$GENE_BIOTYPE_FILE
@@ -184,11 +185,15 @@ eval LOGFILE_SPIKES=$LOGFILE_SPIKES
 eval LOGFILE_REPORT=$LOGFILE_REPORT
 eval LOGFILE_WIG_TDF=$LOGFILE_WIG_TDF
 
-####################################################################################################################################
+#------------------------------------------------------------------------------------------------------------------
+
+
+
+###################################################################################################################
 #
 #This script launches RNAseqPipeline1sample.sh for all fastq.gz files located in $DATADIR
 #
-####################################################################################################################################
+#------------------------------------------------------------------------------------------------------------------
 cd $OUTDIR  || echo "Cannot go to $OUTDIR - Folder doesn't exist ?"
 # for verification
 echo "##############
@@ -218,6 +223,7 @@ Information on species, genome and annotations :
 echo "SPECIES : $SPECIES"
 echo "GENOME_VERSION : $GENOME_VERSION"
 echo "GENOME_PATH : $GENOME_PATH"
+echo "SPIKES_PATH : $SPIKES_PATH"
 echo "BOWTIE_INDEXES : $BOWTIE_INDEXES"
 echo "GTF_FILE : $GTF_FILE"
 
@@ -228,6 +234,10 @@ echo "NBPROC : $NBPROC"
 echo "STATISTICAL_ANALYSIS : $STATISTICAL_ANALYSIS"
 echo "DIST_METHOD : $DIST_METHOD"
 echo "HCLUST_METHOD : $HCLUST_METHOD"
+echo "THRESHOLD_LOG_FC : $THRESHOLD_LOG_FC"
+echo "THRESHOLD_ADJ_PVAL : $THRESHOLD_ADJ_PVAL"
+echo "FIT_TYPE : $FIT_TYPE"
+echo "WINDOW_SIZE : $WINDOW_SIZE"
 
 echo "##############
 Scripts and software versions and location:
@@ -250,10 +260,13 @@ Log files location:
 "
 echo "LOGS directory : `dirname $LOGFILE_REPORT`"
 echo
+#------------------------------------------------------------------------------------------------------------------
 
 
+
+###################################################################################################################
 #Create directories to store all results
-########################################
+#------------------------------------------------------------------------------------------------------------------
 
 # creation of different outputs :
 #output directory for all quality analysis files
@@ -291,20 +304,28 @@ then
     make_directories "$OUTDIR/Quality/RSeQC/strand_specificity" #output directory for strand specificity results files
 fi
 
+# directory where all the temporary files are stored, 
+# in order to wait that all the sbatch jobs are finished before continuing RNAseqPipeline.
 make_directories $OUTDIR/wait_run_end
+#------------------------------------------------------------------------------------------------------------------
 
+
+
+###################################################################################################################
 # OVERALL STATISTICS FOR EACH SAMPLE
-#########################################################################################
 # create a table of all the statistics for each sample
 # e.g sequencing quality statistics, tophat aligment statistics, reads distribution ...
 # available in ${OUTDIR}/quality_analysis/all_statistics_results.txt (statisticsFile)
 # This table is filled via RNAseqPipeline1sample.sh script
+#------------------------------------------------------------------------------------------------------------------
+
 touch ${STATISTICS_FILE}
+
 # header of overall statistics table
-
-
 echo -ne "Sample ID\tSample name\tSequencer\tFlow cell\tLine\tRead Length\t" >> ${STATISTICS_FILE}
 
+# there are some supplementary colums depending on the options
+# if spikes=yes, there are some colums on spike statistics
 if [ "$SPIKES" = "yes" ]
 then
     echo -ne "Total number of sequences (pairs for PE data)\tTotal number of sequences without spikes (pairs for PE data)\tUnique number of sequences (pairs for PE data)\tTotal/Unique number of sequences\t% of Spikes\t" >> ${STATISTICS_FILE}
@@ -312,6 +333,7 @@ else
     echo -ne "Total number of sequences (pairs for PE data)\tUnique number of sequences (pairs for PE data)\tTotal/Unique number of sequences\t" >> ${STATISTICS_FILE}
 fi
 
+# if paired=yes, there are some supplementary columns (eg discordant pairs)
 if [ "$PAIRED" = "no" ]
 then
     echo -ne "Number of reads filtered out by Tophat\t% of reads filtered out by Tophat\tNumber of aligned reads\t% of aligned reads\tNumber of uniquely aligned reads\t% of uniquely aligned reads\tNumber of multiple aligned reads\t% of multiple aligned reads\t" >> ${STATISTICS_FILE}
@@ -319,43 +341,55 @@ else
     echo -ne "Number of reads filtered out by Tophat\t% of reads filtered out by Tophat\tNumber of aligned reads calculated by TopHat2\t% of aligned reads calculated by TopHat2\tNumber of uniquely aligned reads calculated by TopHat2\t% of uniquely aligned reads calculated by TopHat2\tNumber of multiple aligned reads calculated by TopHat2\t% of multiple aligned reads calculated by TopHat2\tNumber of discordant pairs alignment calculated by TopHat2\t% of discordant pairs alignment calculated by TopHat2\tNumber of aligned reads\t% of aligned reads\tNumber of uniquely aligned reads\t% of uniquely aligned reads\tNumber of multiple aligned reads\t% of multiple aligned reads\t" >> ${STATISTICS_FILE}
 fi
 
+# if stranded=reverse, there are two supplementary columns to see if the data are well reverse stranded.
 if [ "$STRANDED" = "reverse" ]
 then
     echo -ne "Density in exons (Tags/Kb)\tDensity in introns (Tags/Kb)\tDensity in TSS up 10kb / TES down 10kb (Tags/Kb)\tNumber of assigned reads\t% of assigned reads\tNumber of no feature reads\t% of no feature reads\tNumber of ambiguous reads\t% of ambiguous reads\tNumber of multiple alignments\t% of reads on forward strand\t% of reads on reverse strand" >> ${STATISTICS_FILE}
 else
     echo -ne "Density in exons (Tags/Kb)\tDensity in introns (Tags/Kb)\tDensity in TSS up 10kb / TES down 10kb (Tags/Kb)\tNumber of assigned reads\t% of assigned reads\tNumber of no feature reads\t% of no feature reads\tNumber of ambiguous reads\t% of ambiguous reads\tNumber of multiple alignments" >> ${STATISTICS_FILE}
 fi
+#------------------------------------------------------------------------------------------------------------------
 
-# #Launch RNAseqPipeline1sample.sh on all fastq files located in data directory
-# #############################################################################
-# ######################################################################
-# # script to do the verification of transcriptome index existence and create it if it does not exist
-# # => uniquely if tophat2 is used
-# # run with slurm if USE_SLURM=true in the config file.
+
+
+###################################################################################################################
+# launch script to do the verification of transcriptome index existence and create it if it does not exist
+# => uniquely if tophat2 is used
+# run with slurm if USE_SLURM=true in the config file.
+#------------------------------------------------------------------------------------------------------------------
 
 if echo ${TOPHAT_VERSION} | grep -q "tophat-2"
 then
     sh $SCRIPTSDIR/src/Alignment/transcriptomeIndexVerification.sh -c ${CONFIG_FILE} -o ${OUTDIR} > ${OUTDIR}/NOHUP_TRANSCRIPTOME-INDEX
 fi
-
 wait
 
 # when the transcriptome-index verification/creation is finished, the corresponding log file is moved in the "Logs" directory.
 mv ${OUTDIR}/NOHUP_TRANSCRIPTOME-INDEX ${OUTDIR}/Logs/NOHUP_TRANSCRIPTOME-INDEX
 
 
-# if paired = no, the RNA-seq experiment has one fastq file per sample, one quality analysis performed
-# and one file is used in RNAseqPipeline1sample.
-# if paired = yes, the RNA-seq experiment has two fastq files per sample (.R1 & .R2) so, two quality
-# analyses are perfomed (one per file) and the two files are used in RNAseqPipeline1sample (but one
-# file is given in parameter in order to recover the common samplename, without R1 & R2).
+
+###################################################################################################################
+# Launch of 2 scripts / sample
+# 1) if paired = no, the RNA-seq experiment has one fastq file per sample so => one QualityAnalysis is performed
+# 	 and one file is used in RNAseqPipeline1sample.
+# 2) if paired = yes, the RNA-seq experiment has two fastq files per sample (.R1 & .R2) so, two quality analysis
+# 	 are perfomed (one per file) and the two files are used in RNAseqPipeline1sample (but one
+# 	 file is given in parameter in order to recover the common samplename, without R1 & R2).
+# 3) if spikes = yes, RNAseqPipeline1sample_WithoutSpikes.sh is launch instead of RNAseqPipeline1sample & 
+#	 QualityAnalysis.sh. This script separates reads of spikes from other reads and then launch 
+# 	 RNAseqPipeline1sample & QualityAnalysis.sh
+#------------------------------------------------------------------------------------------------------------------
+
+########################
+# START OF THE FOR LOOP
+#-----------------------
 
 if [ "$PAIRED" = "no" ]
 then
 	echo "***********************************************************************************"
 	echo "`date`: Start analysis of all single-end samples from $DATADIR"
 	# all the data files are analyzed
-	
 	for file in `ls $DATADIR/*.fastq.gz`
 	do
 
@@ -367,7 +401,7 @@ then
 		if [ "$SPIKES" = "yes" ]
 		then
 		
-			# when we have spike, we process different steps to remove them from the raw fastq files
+			# when we have spikes, we process different steps to remove them from the raw fastq files
 			# and for that, we need a fastq file which will contain the data without spike's reads, here:
 			file_without_spikes_in_GZ_format="${OUTDIR}/Processed_data/${samplename}_without_Spikes.fastq.gz"
 			#we recover the name and samplename of these files, as previously
@@ -378,8 +412,8 @@ then
 			echo "`date` : Because we have Spikes, we create file which will contains all data without spike's reads.
 			So, processing of $samplename_file_without_spikes with the path ${name_file_without_spikes}.fastq.gz"
 
-			# the script AnalysisAllSampleWithoutSpikes performs the two steps performed if there are no spikes : QualityAnalysis & RNAseqPipeline1sample
-			# but there is a supplementary step where reads corresponding to spikes are separated in their own file and all reads different of spikes are put in the fileNoSpikes file.
+			# the script RNAseqPipeline1Sample_Without_Spikes performs the two steps performed if there are no spikes : QualityAnalysis & RNAseqPipeline1sample
+			# but there is a supplementary step where reads corresponding to spikes are separated in their own file and all reads different of spikes are put in the file_without_spikes_in_GZ_format.
 			cmd="sh $SCRIPTSDIR/src/RNAseqPipeline1Sample/RNAseqPipeline1sample_WithoutSpikes.sh --raw-fastq ${file} --processed-fastq ${file_without_spikes_in_GZ_format} --raw-name ${name} --raw-samplename ${samplename} --config-file ${CONFIG_FILE} --outdir ${OUTDIR}"
 
 			echo "#------------------------------------------"
@@ -392,7 +426,6 @@ then
 		
 			echo "`date` : There are no Spikes in this experiment, continue with the ${name}.fastq.gz file."
 			# QualityAnalysis.sh
-
 			echo "#------------------------------------------"
 			echo "Quality analysis command on $samplename :"
 			echo "bash $SCRIPTSDIR/src/Quality/QualityAnalysis.sh --fastq-file $file --config-file ${CONFIG_FILE} --outdir ${OUTDIR} > ${OUTDIR}/Logs/nohup.$samplename &"
@@ -401,7 +434,7 @@ then
 			bash $SCRIPTSDIR/src/Quality/QualityAnalysis.sh --fastq-file $file --config-file ${CONFIG_FILE} --outdir ${OUTDIR} > ${OUTDIR}/Logs/nohup.$samplename &
 
 			# RNAseqPipeline1sample.sh
-
+			# launch with slurm
 			cmd="sh $SCRIPTSDIR/src/RNAseqPipeline1Sample/RNAseqPipeline1sample.sh --fastq-file ${file} --config-file ${CONFIG_FILE} --outdir $OUTDIR"
 			
 			echo "#------------------------------------------"
@@ -415,13 +448,8 @@ then
 	
 	done
 
-	# wait that all the tmp files are created
-	sleep 30
-	# wait until all the previous process are ended
-	while [ `ls $OUTDIR/wait_run_end/ | wc -l` != 0 ]
-	do
-	  sleep 60
-	done
+	# wait that all the tmp files are created by slurm and wait that all jobs end (when all the tmp files are removed)
+	wait_until_jobs_end ${OUTDIR}
 	wait
 
 	echo " `date`: alignment of spikes and separation in two FASTQ files : DONE "
@@ -432,9 +460,8 @@ then
 	echo "***********************************************************************************"
 	echo "`date`: Start analysis of all paired-end samples from $DATADIR"
 	# all the data files (with R1 suffix) are scanned
-	# since both files correspond to one sample, if we considers all the data files
+	# as both files correspond to one sample, if we consider all the data files
 	# we analyze twice too many samples
-	
 	for file in `ls $DATADIR/*.R1.fastq.gz`
 	do
 	
@@ -464,7 +491,7 @@ then
 		else
 
 			# RNAseqPipeline1sample.sh is performed with the common file name of paired files
-
+			# to make the alignment with the two files and to have a common .sam file (with the two reads)
 			cmd="sh $SCRIPTSDIR/src/RNAseqPipeline1Sample/RNAseqPipeline1sample.sh --fastq-file ${name}.R1.fastq.gz --config-file ${CONFIG_FILE} --outdir $OUTDIR"
 			
 			echo "#------------------------------------------"
@@ -474,6 +501,7 @@ then
 
 			ids[${#ids[*]}]=$(run -n "RNAseqPipeline1sample_${samplename}" -p "$SLURM_PARTITION" -l "${OUTDIR}/Logs/nohup.${samplename}" -w "${OUTDIR}" $cmd)
 
+			# 2 QualityAnalysis.sh because there are two fastq files in paired-end, so we want to know the quality of each read (R1 and R2)
 			# QualityAnalysis.sh on .R1 file	
 			echo "#------------------------------------------"
 			echo "Quality analysis command on $samplename.R1 :"
@@ -497,13 +525,8 @@ then
 		
 	done
 
-	# wait that all the tmp files are created
-	sleep 30
-	# wait until all the previous process are ended
-	while [ `ls $OUTDIR/wait_run_end/ | wc -l` != 0 ]
-	do
-	  sleep 60
-	done
+	# wait that all the tmp files are created by slurm and wait that all jobs end (when all the tmp files are removed)
+	wait_until_jobs_end ${OUTDIR}
 	wait
 	
 	echo " `date`: alignment of spikes and separation in two FASTQ files : DONE "
@@ -512,6 +535,18 @@ else
 
 	print_err_and_exit "The paired-end variable is misnamed - EXIT"
 fi
+
+#####################
+# END OF THE FOR LOOP
+#--------------------
+#------------------------------------------------------------------------------------------------------------------
+
+
+
+###################################################################################################################
+# if spikes = yes, the .sam file creates by RNAseqPipeline1sample_WithoutSpikes.sh and containing all the reads
+# of spikes is used to generates some quality analyses.
+#------------------------------------------------------------------------------------------------------------------
 
 if [ "$SPIKES" = "yes" ]
 then
@@ -558,13 +593,19 @@ then
 	wait
 
 fi
+#------------------------------------------------------------------------------------------------------------------
 
 echo "Analysis of all samples from $DATADIR complete."
 echo "***********************************************************************************"
 
-# #Generate a tab-delimited text file containing the statistics for all samples
-# #############################################################################
-# #concatenate all stat files and generate corresponding tab delimited text file
+
+
+###################################################################################################################
+# Generates a tab-delimited text file containing the statistics for all samples
+# concatenate all stat files and generate corresponding tab delimited text file
+# there is one summary table for the quality assessment : stats_summary.txt
+# and one summary table for the reads alignment : tophat_stats_summary.txt
+#------------------------------------------------------------------------------------------------------------------
 
 echo "Creation of tab-delimited text files with the statistics on all sequences and on all tophat results."
 # #statistics on the sequences
@@ -583,13 +624,15 @@ else
 	tophat2V="no"
 
 fi
-
 echo "source(\"$SCRIPTSDIR/src/Alignment/TophatInfos.R\");dir = \"$OUTDIR/Alignment\";paired = \"$PAIRED\";tophat2 = \"$tophat2V\";tophatinfos(dir,paired,tophat2) " | $RBIN --no-save --no-restore --quiet
 
 wait
+#------------------------------------------------------------------------------------------------------------------
 
-# #Analysis of HTseq results and concatenation of all result files
-# ###############################################################
+
+###################################################################################################################
+# Analysis of HTseq results and concatenation of all result files
+#------------------------------------------------------------------------------------------------------------------
 
 echo "#------------------------------------------"
 echo "Analysis of HTSeq results and concatenation of all HTSeq result files :"
@@ -603,11 +646,13 @@ wait
 sort_design_file $DESIGN_FILE_REPORT $OUTDIR || { echo "/!\ /!\ sort_design_file failed - be careful that the order in htseq_combined is the same than design_file when analyzing /!\ /!\ RNAseqPipeline continue ..."; }
 
 test_empty_file $DESIGN_FILE_REPORT
+#------------------------------------------------------------------------------------------------------------------
 
-# ########################################
-# #Generation of overall automatic report 
-# ########################################
 
+
+###################################################################################################################
+# Generation of overall automatic report 
+#------------------------------------------------------------------------------------------------------------------
 # create log file of automatic report
 touch ${LOGFILE_REPORT}
 
@@ -619,11 +664,9 @@ echo "#------------------------------------------"
 sh ${REPORTDIR}/RNAseqReport.sh -c $CONFIG_FILE -o $OUTDIR -d $DATADIR -f $DESIGN_FILE_REPORT &>> ${LOGFILE_REPORT}
 wait
 
-# #Add of R command before pdflatex, otherwise latex does not find the file Sweave.sty
-# #Generation of automatic report (pdflatex) and the corresponding bibliography (bibtex)
-
 cd ${OUTDIR}/Report
 
+#Generation of automatic report (pdflatex) and the corresponding bibliography (bibtex)
 echo "#------------------------------------------"
 echo "Compilation of overall latex reports :"
 echo "compile_latex_report ${RBIN} ${OUTDIR} ${PROJECT_NUMBER} &>> ${LOGFILE_REPORT}"
@@ -634,12 +677,13 @@ compile_latex_report ${RBIN} ${OUTDIR} ${PROJECT_NUMBER} &>> ${LOGFILE_REPORT}
 wait
 
 echo "`date`: generation of auto report : done"
+#------------------------------------------------------------------------------------------------------------------
 
-# #####################################################################
-# #Generation of normalized wig files after recovering of sizeFactor
-# #####################################################################
-# # creation of log file corresponding of the generation of wig & tdf files
 
+
+####################################################################################################################
+# Generation of normalized wig & tdf files after recovering of sizeFactor + generation of the corresponding .bw file
+#-------------------------------------------------------------------------------------------------------------------
 
 touch ${LOGFILE_WIG_TDF}
 
@@ -684,25 +728,24 @@ do
 	ids[${#ids[*]}]=$(run -n "Wig_generation_${file}" -p "$SLURM_PARTITION" -l "$LOGFILE_WIG_TDF" -w "${OUTDIR}/Alignment" $cmd)
 done
 
-# wait that all the tmp files are created
-sleep 30
-# wait until all the previous process are ended
-while [ `ls $OUTDIR/wait_run_end/ | wc -l` != 0 ]
-do
-  sleep 60
-done
+# wait that all the tmp files are created and wait that all jobs end
+wait_until_jobs_end ${OUTDIR}
 wait
+#-------------------------------------------------------------------------------------------------------------------
 
-# #####################################################################
-# #Generation of gene body coverage graph
-# #####################################################################
+
+
+####################################################################################################################
+# Generation of gene body coverage graph
+#-------------------------------------------------------------------------------------------------------------------
 
 sh $SCRIPTSDIR/src/Quality/GeneBodyCoverage.sh --config-file ${CONFIG_FILE} --outdir ${OUTDIR}
-
 
 cp $DESIGN_FILE_REPORT $DESIGN_FILE
 
 rm -R $OUTDIR/wait_run_end/
+
+#-------------------------------------------------------------------------------------------------------------------
 
 echo "#------------------------------------------"
 echo "`date`"

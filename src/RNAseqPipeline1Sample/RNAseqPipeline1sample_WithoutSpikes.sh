@@ -6,33 +6,36 @@
 #--------------------------------------------------------------------------------------------------------------------------------------------
 # This script is dedicated to the separation of the spike's reads and the other reads
 # together with the processing of the RNAseq sample (ie all the reads without spikes).
-# Spikes will be processed separately by a dedicated script.
+# Spikes will be processed separately by a dedicated script in run.sh.
 #--------------------------------------------------------------------------------------------------------------------------------------------
 # if spikes = yes, this script is executed. It separates the raw fastq file into two files:
-# - one fastq file without reads corresponding to spikes (and we have called "${samplename}_without_Spikes.fastq" in run.sh)
-# - one sam file containing all reads of spikes
+# - one fastq file without reads corresponding to spikes (than we have called "${samplename}_without_Spikes.fastq" in run.sh)
+# - one sam file containing all reads of spikes (used later for the spike's analysis)
 # Then it execute the scripts "QualityAnalysis.sh" and "RNAseqPipeline1sample.sh" on the fastq file which doesn't contain the spikes' reads.
 # (whereas if spikes = no, these two scripts are executed directly on the raw fastq file through the script "run.sh").
 #--------------------------------------------------------------------------------------------------------------------------------------------
 
-#------------------------------------------------------------------------------------------------------------------
+###################################################################################################################
 # Define the function to print the usage of the script
 #------------------------------------------------------------------------------------------------------------------
 function usage
 {
 	cat <<-__EOF__
 		Usage:
-		    sh AnalysisAllSampleWithoutSpikes.sh -rf raw-fastq-file -pf processed-fastq-file -rn raw-name -rs raw-samplename -c config_file -o outdir [-h]
+		    sh RNAseqPipeline1sample_WithoutSpikes.sh -rf raw-fastq-file -pf processed-fastq-file -rn raw-name 
+		    -rs raw-samplename -c config_file -o outdir [-h]
 
 		Description:
-		    This script is dedicated to the separation of the spike's reads and the other reads together with the processing of the RNAseq 
-		    sample (ie all the reads without spikes). Spikes will be processed separately by a dedicated script.
+		    This script is dedicated to the separation of the spike's reads and the other reads together with 
+		    the processing of the RNAseq sample (ie all the reads without spikes). Spikes will be processed 
+		    separately by a dedicated script.
 
 		Options:
 		 	-rf, --raw-fastq raw fastq file in .gz format, located in the rawdata folder
 		        This option is required. 
 		        Generally of type : /path/to/Num_project_Name_author/rawdata
-		 	-pf, --processed-fastq fastq file in .gz format, containing reads which are not from Spikes, and located in the Processed_data folder
+		 	-pf, --processed-fastq fastq file in .gz format, containing reads which are not from Spikes, 
+		 		and located in the Processed_data folder
 		        This option is required. 
 		        Generally of type : /path/to/Num_project_Name_author/Date/Processed_data
 		 	-rn, --raw-name Name of the raw fastq file, defined in run.sh
@@ -52,7 +55,7 @@ function usage
 }
 #------------------------------------------------------------------------------------------------------------------
 
-#------------------------------------------------------------------------------------------------------------------
+###################################################################################################################
 # Getting parameters from the input
 #------------------------------------------------------------------------------------------------------------------
 ARGS=$(getopt -o "rf:pf:rn:rs:c:o:h" --long "raw-fastq:,processed-fastq:,raw-name:,raw-samplename:,config-file:,outdir:,help" -- "$@" 2> /dev/null)
@@ -101,7 +104,7 @@ do
 done
 #------------------------------------------------------------------------------------------------------------------
 
-#------------------------------------------------------------------------------------------------------------------
+###################################################################################################################
 # Checking the input parameter
 #------------------------------------------------------------------------------------------------------------------
 [ "$RAW_FASTQ" == "" ] || [ "$PROCESSED_FASTQ" == "" ] || [ "$RAW_NAME" == "" ] || [ "$RAW_SAMPLENAME" == "" ] || [ "$CONFIG_FILE" == "" ] || [ "$OUTDIR" == "" ] && \
@@ -111,16 +114,26 @@ done
 # to wait until the script ends.
 touch $OUTDIR/wait_run_end/${RAW_SAMPLENAME}_tmp.txt
 
-source $CONFIG_FILE
 
+
+###################################################################################################################
+# source the other parameters
+#------------------------------------------------------------------------------------------------------------------
+source $CONFIG_FILE
 source "$SCRIPTSDIR/src/Utilities/utils.sh"
+#------------------------------------------------------------------------------------------------------------------
+
+
+
+###################################################################################################################
+# determine the different files to process and where process them.
+#------------------------------------------------------------------------------------------------------------------
 
 #path/to/file without spike's reads
 file_without_spikes_in_GZ_format=${PROCESSED_FASTQ}
 file_without_spikes=$( echo $file_without_spikes_in_GZ_format | sed "s/\.gz//" )
 
 #path/to/sample_name (= file name without final .fastq.gz)
-# there is the command "sed -e 's/\.R1//'" because when we work on paired-end data, we send only the .R1 fastq file to this script, in order to recover the samplename.
 name_file_without_spikes=$( get_name ${file_without_spikes_in_GZ_format} )
 
 #sample name
@@ -129,25 +142,29 @@ samplename_file_without_spikes=$( get_sample_name ${file_without_spikes_in_GZ_fo
 # alignment of spikes and separation in two FASTQ files to perform all 
 # the analysis of spikes separately from other reads.
 make_directories ${OUTDIR}/Alignment/${samplename_file_without_spikes}	
-#gunzip ${RAW_NAME}*fastq.gz
 wait
-
-#------------------------------------------------------------------------------------------------------------------
-# for this alignment step :
-# we use another sbatch command because Bowtie uses a number of cpu, so send this command on another sbatch allows 
-# to cleanly assign the job on the different cluster.
 #------------------------------------------------------------------------------------------------------------------
 
+
+
+###################################################################################################################
+# Alignment of raw reads on spikes reference, to remove spikes reads from the raw fastq file
+# and put them in a separate .sam file
+# when the alignment with bowtie is finished, the QualityAnalysis.sh & RNAseqPipeline1sample.sh scripts are launched
+#------------------------------------------------------------------------------------------------------------------
 echo " `date`: alignment of spikes and separation in two FASTQ files "
 
 if [ "$PAIRED" = "no" ]
 then
 
 	touch ${OUTDIR}/Alignment/${samplename_file_without_spikes}/${RAW_SAMPLENAME}_Spikes.sam 
+	# we use the mkfifo command to not gunzip and then gzip all the fastq.gz files (bowtie can't read the .gz format)
+	# mkfifo will create a queue on the filesystem that acts just like a regular file: we can write to it and read from it, 
+	# but with the constraint of not being able to seek generic positions from it. In our case, we will create a queue, 
+	# write the decompressed Fastq, and tell the second process in the pipeline (Bowtie) to read it's input from the previously create fifo
 	mkfifo ${OUTDIR}/Alignment/${samplename_file_without_spikes}/${RAW_SAMPLENAME}.fifo
 	zcat ${RAW_FASTQ} > ${OUTDIR}/Alignment/${samplename_file_without_spikes}/${RAW_SAMPLENAME}.fifo &
 
-	#raw_fastq_gunzip=$( echo ${RAW_FASTQ} | sed 's/.gz//' )
 	echo "${RAW_SAMPLENAME}" >> $OUTDIR/Quality/Spikes/${RAW_SAMPLENAME}_stats_Spikes.txt
 
 	if echo ${BOWTIE_VERSION} | grep -qE "bowtie-1|bowtie-0"
@@ -156,7 +173,6 @@ then
 		# with bowtie1, the option "--un" allows to recover the unaligned reads in a separate fastq file
 		# corresponding to reads which are not from Spikes.
 		# the .sam file will contain the bowtie alignment, ie all the reads corresponding to spikes
-			
 		echo "#------------------------------------------"
 		echo "Bowtie commands : Alignment on Spikes =>"
 		echo "${BIN}/${BOWTIE_VERSION}/bowtie -p ${NBPROC} --un ${file_without_spikes} ${INDEX_SPIKES} ${OUTDIR}/Alignment/${samplename_file_without_spikes}/${RAW_SAMPLENAME}.fifo ${OUTDIR}/Alignment/${samplename_file_without_spikes}/${RAW_SAMPLENAME}_Spikes.sam &>> $OUTDIR/Quality/Spikes/${RAW_SAMPLENAME}_stats_Spikes.txt"
@@ -174,7 +190,6 @@ then
 		# in order to kepp the spikes only.
 		# (there is a "--no-unal" option for that the unaligned reads don't appear in the .sam file 
 		# BUT the "--un-conc" option no longer works and fastq file is empty)
-		
 		echo "#------------------------------------------"
 		echo "Bowtie command : Alignment on Spikes =>"
 		echo "${BIN}/${BOWTIE_VERSION}/bowtie2 -U ${OUTDIR}/Alignment/${samplename_file_without_spikes}/${RAW_SAMPLENAME}.fifo -p ${NBPROC} --un ${file_without_spikes} ${INDEX_SPIKES} -S ${OUTDIR}/Alignment/${samplename_file_without_spikes}/${RAW_SAMPLENAME}_Spikes.sam &>> $OUTDIR/Quality/Spikes/${RAW_SAMPLENAME}_stats_Spikes.txt &"
@@ -191,12 +206,11 @@ then
 	wait
 	rm ${OUTDIR}/Alignment/${samplename_file_without_spikes}/${RAW_SAMPLENAME}.fifo
 	gzip ${file_without_spikes}
-	# removal of reads do not correspond to spikes
+	# removal of reads which do not correspond to spikes
 	sed -i '/AS:*/!d' ${OUTDIR}/Alignment/${samplename_file_without_spikes}/${RAW_SAMPLENAME}_Spikes.sam
 	wait
 
 	# QualityAnalysis.sh		
-	
 	echo "#------------------------------------------"
 	echo "Quality analysis command :"
 	echo "bash $SCRIPTSDIR/src/Quality/QualityAnalysis.sh --fastq-file ${file_without_spikes_in_GZ_format} --config-file ${CONFIG_FILE} --outdir ${OUTDIR} >> ${OUTDIR}/Logs/nohup.${samplename_file_without_spikes} &"
@@ -205,7 +219,6 @@ then
 	bash $SCRIPTSDIR/src/Quality/QualityAnalysis.sh --fastq-file ${file_without_spikes_in_GZ_format} --config-file ${CONFIG_FILE} --outdir ${OUTDIR} >> ${OUTDIR}/Logs/nohup.${samplename_file_without_spikes} &
 
 	# RNAseqPipeline1sample.sh
-	
 	echo "#------------------------------------------"
 	echo "RNAseqPipeline1sample on $RAW_SAMPLENAME :"
 	echo "sh $SCRIPTSDIR/src/RNAseqPipeline1Sample/RNAseqPipeline1sample.sh --fastq-file ${file_without_spikes_in_GZ_format} --config-file ${CONFIG_FILE} --outdir $OUTDIR >> ${OUTDIR}/Logs/nohup.${samplename_file_without_spikes} &"
@@ -219,6 +232,10 @@ elif [ "$PAIRED" = "yes" ]
 then
 
 	touch ${OUTDIR}/Alignment/${samplename_file_without_spikes}/${RAW_SAMPLENAME}_Spikes.sam 
+	# we use the mkfifo command to not gunzip and then gzip all the fastq.gz files (bowtie can't read the .gz format)
+	# mkfifo will create a queue on the filesystem that acts just like a regular file: we can write to it and read from it, 
+	# but with the constraint of not being able to seek generic positions from it. In our case, we will create a queue, 
+	# write the decompressed Fastq, and tell the second process in the pipeline (Bowtie) to read it's input from the previously create fifo
 	wait
 	mkfifo ${OUTDIR}/Alignment/${samplename_file_without_spikes}/${RAW_SAMPLENAME}_R1.fifo
 	mkfifo ${OUTDIR}/Alignment/${samplename_file_without_spikes}/${RAW_SAMPLENAME}_R2.fifo
@@ -249,7 +266,6 @@ then
 		# in order to kepp the spikes only.
 		# (there is a "--no-unal" option for that the unaligned reads don't appear in the .sam file 
 		# BUT the "--un-conc" option no longer works and fastq file is empty)
-		
 		echo "${RAW_SAMPLENAME}" >> $OUTDIR/Quality/Spikes/${RAW_SAMPLENAME}_stats_Spikes.txt
 
 		echo "#------------------------------------------"
@@ -289,7 +305,6 @@ then
 	wait
 
 	# two quality analyses are performed, one for .R1 file and one for .R2 file.
-
 	# RNAseqPipeline1sample.sh
 	echo "#------------------------------------------"
 	echo "RNAseqPipeline1sample on $samplename_file_without_spikes :"
@@ -323,6 +338,8 @@ else
 	print_err_and_exit "The paired-end variable is misnamed. Exit RNAseqPipeline."
 
 fi	
-		
+#------------------------------------------------------------------------------------------------------------------
+
+
 # to say that the script ends
 rm $OUTDIR/wait_run_end/${RAW_SAMPLENAME}_tmp.txt

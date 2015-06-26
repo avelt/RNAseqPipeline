@@ -7,7 +7,10 @@
 #This script analyze one gzipped fastq file containing RNAseq reads :
 #1. mapping with Tophat and generation of a file containing statistics on tophat result
 #2. quantification with HTSeq and generation of a file containing statistics on HTseq result
+#3. different quality assessment in function of the parameters (stranded protocol, paired-end reads, ...)
 #------------------------------------------------------------------------------------------------------------------
+
+
 
 ###################################################################################################################
 # Define the function to print the usage of the script
@@ -37,6 +40,8 @@ function usage
 		__EOF__
 }
 #------------------------------------------------------------------------------------------------------------------
+
+
 
 ###################################################################################################################
 # Getting parameters from the input
@@ -75,49 +80,52 @@ do
 done
 #------------------------------------------------------------------------------------------------------------------
 
-#------------------------------------------------------------------------------------------------------------------
+
+
+###################################################################################################################
 # Checking the input parameter
 #------------------------------------------------------------------------------------------------------------------
 [ "$FILE" == "" ] || [ "$CONFIG_FILE" == "" ] || [ "$OUTDIR" == "" ] && \
 	echo "Options --fastq-file, --config-file and --outdir are required. " "Use -h or --help to display the help." && exit 1;
 #------------------------------------------------------------------------------------------------------------------
 
+
+
+###################################################################################################################
+# Source the other parameters
+#------------------------------------------------------------------------------------------------------------------
 source $CONFIG_FILE
-
 source "$SCRIPTSDIR/src/Utilities/utils.sh"
+#------------------------------------------------------------------------------------------------------------------
 
-#Start analysis
-################
+
+###################################################################################################################
+# Start of 1 sample analysis
+#------------------------------------------------------------------------------------------------------------------
 echo "***********************************************************************************"
 echo "Analysis of file $FILE"
 echo
-
-
 #path/to/sample_name (= file name without final .fastq.gz)
 name=$( get_name ${FILE} | sed -e 's/\.R1//' )
 #sample name
 samplename=$( get_sample_name ${FILE} | sed -e 's/\.R1//' )
-
-
-
 # to wait until the script ends.
 touch $OUTDIR/wait_run_end/${samplename}_tmp.txt
+#------------------------------------------------------------------------------------------------------------------
 
-####################################################################################################
-#Tophat analysis
-####################################################################################################
+
+
+###################################################################################################################
+# TopHat or TopHat2 alignment
+# Launch TopHat on one fastq sequence file (or two fastq files if paired=yes)
+# TopHat is launched with options -p nb_of_processors -G gtf_file
+# results are stored in $outdir/Alignment/*/*
+# where * correspond to the sample name (from *.fastq.gz)
+#------------------------------------------------------------------------------------------------------------------
+
 echo "****************************************"
 echo "`date`: Tophat analysis"
 echo "****************************************"
-
-#################
-#Launch tophat on a fastq sequence file 
-#tophat is launched with options -p nb_of_processors -G gtf_file
-#results are stored in $outdir/Alignment/*/tophat_out 
-#where * correspond to the sample name (from *_qf.fastq.gz)
-#Caution, for short read length (<45bp), it is recommended that users decrease segment length (--segment-length) to about half the read length and segment mismatches (--segment-mismatches) to 0 or 1 
-#Caution, for fastq files generated with previous casava version (ie with ASCII+64), use the option --solexa1.3-quals
-#################
 
 cd $OUTDIR/Alignment
 
@@ -126,7 +134,6 @@ export BOWTIE_INDEXES=${BOWTIE_INDEXES}
 
 # Version of the transcriptome, recovered from the GTF file name (so, give a suitable name to you GTF file !)
 TRANSCRIPTOME_VERSION=$( basename $GTF_FILE | sed 's/.gtf//' )
-
 
 if [ ! -d "${GENOME_PATH}/${SPECIES}/${GENOME_VERSION}/" ]
 then
@@ -138,7 +145,7 @@ make_directories "${GENOME_PATH}/${SPECIES}/${GENOME_VERSION}/Tophat"
 TRANSCRIPTOME_INDEX=${GENOME_PATH}/${SPECIES}/${GENOME_VERSION}/Tophat/${TRANSCRIPTOME_VERSION}/${TRANSCRIPTOME_VERSION}
 TRANSCRIPTOME_PATH=`dirname $TRANSCRIPTOME_INDEX`
 
-# path to bowtie and samtools for tophat
+# path to bowtie and samtools for TopHat
 export PATH=$PATH:$BIN/$BOWTIE_VERSION/:$BIN/$SAMTOOLS_VERSION/
 
 # choosing the tophat option depending on whether the protocol is stranded or not
@@ -152,11 +159,11 @@ else
     print_err_and_exit "The STRANDED variable is misnamed. Exit."
 fi
 
-# if tophat 1 is used, no transcriptome-index are used and the alignment time is longer
+# if TopHat1 is used, no transcriptome-index are used and the alignment time is longer
 if echo ${TOPHAT_VERSION} | grep -q "tophat-1"
 then
 	
-	# if the RNA-seq libraries are not paired-end, there is only a fastq file for tophat alignment
+	# if the RNA-seq libraries are not paired-end, there is only one fastq file for TopHat alignment
 	if [ "$PAIRED" = "no" ]
 	then
 		echo "#------------------------------------------------------------------"
@@ -165,7 +172,7 @@ then
 		echo "#------------------------------------------------------------------"
 		$BIN/$TOPHAT_VERSION/tophat --library-type=$librarytype -p $NBPROC --GTF=${GTF_FILE} -o $samplename ${BOWTIE_INDEXES}/${GENOME_VERSION} $FILE 2>> ${OUTDIR}/Logs/nohup.${samplename}
 	
-	# if the RNA-seq libraries are paired-end, there are two fastq files for tophat alignment
+	# if the RNA-seq libraries are paired-end, there are two fastq files for TopHat alignment
 	elif [ "$PAIRED" = "yes" ]
 	then
 		echo "#------------------------------------------------------------------"
@@ -180,19 +187,20 @@ then
 
 	fi
 	
-# if tophat 2 is used, transcriptome-index are used and the alignment time is faster
+# if TopHat2 is used, transcriptome-index are used and the alignment time is faster (and the alignment better !)
 elif echo ${TOPHAT_VERSION} | grep -q "tophat-2"
 then
 	
 	if [ "$REALIGN" = "no" ]
 	then
 
-		#Launch tophat
+		# Launch TopHat2
 		# --no-coverage-search option is used because coverage-search takes too much time or memory
 		# and is necessary for short reads (< 40-bp) which is not our case.
 		# --transcriptome-index option is used to reduce the time of alignment more than 30 minutes.
+		# it is possible to use the --read-realign-edit-dist option, see config.sh file
 
-		# if the RNA-seq libraries are not paired-end, there is only a fastq file for tophat alignment
+		# if the RNA-seq libraries are not paired-end, there is only one fastq file for TopHat2 alignment
 		if [ "$PAIRED" = "no" ]
 		then
 
@@ -203,7 +211,7 @@ then
 			# possible de rajouter l'option --read-realign-edit-dist=0
 			$BIN/$TOPHAT_VERSION/tophat2 -o $samplename --library-type=$librarytype -p $NBPROC --no-coverage-search --transcriptome-index=${TRANSCRIPTOME_INDEX} ${BOWTIE_INDEXES}/${GENOME_VERSION} $FILE 2>> ${OUTDIR}/Logs/nohup.${samplename}
 		
-		# if the RNA-seq libraries are paired-end, there are two fastq files for tophat alignment
+		# if the RNA-seq libraries are paired-end, there are two fastq files for TopHat2 alignment
 		elif [ "$PAIRED" = "yes" ]
 		then
 		
@@ -222,12 +230,13 @@ then
 	elif [ "$REALIGN" = "yes" ]
 	then
 
-		#Launch tophat
+		# Launch TopHat2
 		# --no-coverage-search option is used because coverage-search takes too much time or memory
 		# and is necessary for short reads (< 40-bp) which is not our case.
 		# --transcriptome-index option is used to reduce the time of alignment more than 30 minutes.
+		# it is possible to use the --read-realign-edit-dist option, see config.sh file
 
-		# if the RNA-seq libraries are not paired-end, there is only a fastq file for tophat alignment
+		# if the RNA-seq libraries are not paired-end, there is only a fastq file for TopHat2 alignment
 		if [ "$PAIRED" = "no" ]
 		then
 			echo "#------------------------------------------------------------------"
@@ -237,7 +246,7 @@ then
 			# possible de rajouter l'option --read-realign-edit-dist=0
 			$BIN/$TOPHAT_VERSION/tophat2 -o $samplename --library-type=$librarytype -p $NBPROC --no-coverage-search --read-realign-edit-dist=0 --transcriptome-index=${TRANSCRIPTOME_INDEX} ${BOWTIE_INDEXES}/${GENOME_VERSION} $FILE 2>> ${OUTDIR}/Logs/nohup.${samplename}
 
-		# if the RNA-seq libraries are paired-end, there are two fastq files for tophat alignment
+		# if the RNA-seq libraries are paired-end, there are two fastq files for TopHat2 alignment
 		elif [ "$PAIRED" = "yes" ]
 		then
 
@@ -265,22 +274,30 @@ fi
 wait
 wait
 
-#Analysis of tophat results
-echo "Analysis of Tophat results."
+#Analysis of TopHat results : FINISHED
+echo "Analysis of TopHat results."
 
-#directory where tophat results are located for this sample
+#directory where TopHat results are located for this sample
 dir=${OUTDIR}/Alignment/${samplename}
+#------------------------------------------------------------------------------------------------------------------
 
 
-## calculation of total number of reads
 
+###################################################################################################################
+# Analysis of TopHat results.
+# calculation of some statistics as total number of reads, total number of unique (or multiple) aligned reads ...
+#------------------------------------------------------------------------------------------------------------------
 echo -n "Directory | " >> $OUTDIR/Alignment/tophat_stats_${samplename}.txt
 echo $dir >> $OUTDIR/Alignment/tophat_stats_${samplename}.txt
+
+####### TOTAL NUMBER OF READS #######
 
 if [ "$PAIRED" = "yes" ]
 then
 	if [ "$SPIKES" = "yes" ]
 	then
+		# if spikes = yes, we calculate the total number of PAIRS (because paired-end sequencing) AND 
+		# the total number of PAIRS without Spikes to determine the number of spikes' pairs
 		raw_samplename=$( get_sample_name ${FILE} | sed -e 's/\.R1//' | sed -e 's/_without_Spikes//' )
 		totalNumberReads=$( zgrep -c "@HWI" "$OUTDIR/../${DATA_FOLDER}/${raw_samplename}.R1.fastq.gz" )
 		totalNumberReadsWithoutSpikes=$( zgrep -c "@HWI" "$OUTDIR/Processed_data/${samplename}.R1.fastq.gz" )
@@ -289,6 +306,7 @@ then
 		echo -n "Nb of reads | ${filteredOut} out of ${totalNumberReadsWithoutSpikes} reads have been filtered out
 " >> $OUTDIR/Alignment/tophat_stats_${samplename}.txt
 	else
+		# else we calculate only the total number of PAIRS (pairs because we calculate only on .R1 file)
 		totalNumberReads=$( zgrep -c "@HWI" "$OUTDIR/../${DATA_FOLDER}/${samplename}.R1.fastq.gz" )
 		filteredOut=$( head -4 $OUTDIR/Alignment/${samplename}/logs/prep_reads.log | tail -n 1 | cut -d" " -f1 )
 		#nb of reads filtered out by tophat
@@ -298,6 +316,7 @@ then
 else
 	if [ "$SPIKES" = "yes" ]
 	then
+		# if spikes = yes, we calculate the total number of reads AND the total number of reads without Spikes to determine the number of spikes' reads
 		raw_samplename=$( get_sample_name ${FILE} | sed -e 's/\.R1//' | sed -e 's/_without_Spikes//' )
 		totalNumberReads=$( zgrep -c "@HWI" "$OUTDIR/../${DATA_FOLDER}/${raw_samplename}.fastq.gz" )
 		totalNumberReadsWithoutSpikes=$( zgrep -c "@HWI" "$OUTDIR/Processed_data/${samplename}.fastq.gz" )
@@ -306,6 +325,7 @@ else
 		echo -n "Nb of reads | ${filteredOut} out of ${totalNumberReadsWithoutSpikes} reads have been filtered out
 " >> $OUTDIR/Alignment/tophat_stats_${samplename}.txt
 	else
+		# else we calculate only the total number of reads
 		totalNumberReads=$( zgrep -c "@HWI" "$OUTDIR/../${DATA_FOLDER}/${samplename}.fastq.gz" )
 		filteredOut=$( head -3 $OUTDIR/Alignment/${samplename}/logs/prep_reads.log | tail -n 1| cut -d" " -f1 )
 		#nb of reads filtered out by tophat
@@ -314,20 +334,18 @@ else
 	fi
 fi
 
-
 #conversion of bam to sam => to generate the alignment statistics
 $BIN/$SAMTOOLS_VERSION/samtools view $dir/accepted_hits.bam -o $dir/accepted_hits.sam 
 wait
 
-## calculation of statistics on alignment data : eg nb of aligned reads ...
-## with TopHat1, we must do the calculations ourselves.
-## with TopHat2, the "align_summary.txt" file is generated for each sample and contain the different statistics, so we take the statistics in this file.
+####### STATISTICS ON ALIGNMENT #######
+# calculation of statistics on alignment file (.sam) : eg nb of aligned reads ...
+# with TopHat1, we must do the calculations ourselves.
+# with TopHat2, the "align_summary.txt" file is generated for each sample and contain the different statistics, so we take the statistics in this file.
+# but with TopHat2, the statistics for paired-end in the "align_summary.txt" file is not well documented, so for paired-end we calculate also the statistics ourselves.
 
 if echo ${TOPHAT_VERSION} | grep -q "tophat-1"
 then
-
-	#conversion of bam to sam
-	$BIN/$SAMTOOLS_VERSION/samtools view $dir/accepted_hits.bam -o $dir/accepted_hits.sam 
 			
 	#count nb of aligned reads
 	echo -n "Nb of aligned reads | " >> $OUTDIR/Alignment/tophat_stats_${samplename}.txt #(note that 2 reads could have the same sequence)
@@ -347,9 +365,8 @@ then
 
 	if [ "$PAIRED" = "no" ]
 	then
-		## with paired-end experiment, an additionnal statistic is find in the "align_summary.txt" file, which is "Discordant" pairs of reads.
-		## we substract multiple reads AND discordant reads of mapped reads to obtain number of uniquely aligned reads.
 
+		# from the "align_summary.txt" generated by TopHat2
 		Mapped=`grep "Mapped" ${dir}/align_summary.txt | sed "s/ *.Mapped   ://" | sed "s/(.*)//" | sed "s/ //g"`
 		Multiple=`grep "of these:" ${dir}/align_summary.txt | sed "s/ *.of these://" | sed "s/(.*)//" | sed "s/ //g"`
 		Unique=$( bc <<<"scale=3;(${Mapped}-${Multiple})" ) 
@@ -367,9 +384,11 @@ then
 	elif [ "$PAIRED" = "yes" ]
 	then
 
+		# from the "align_summary.txt" generated by TopHat2
 		Mapped=`grep "Aligned pairs" ${dir}/align_summary.txt | sed "s/Aligned pairs://" | sed "s/ //g"`
 		Multiple=`grep "have multiple alignments$" ${dir}/align_summary.txt | sed "s/ *.of these://" | sed "s/(.*).*//" | sed "s/ //g"`
 		Unique=$( bc <<<"scale=3;(${Mapped}-${Multiple})" ) 
+		# supplementary statistics give by TopHat2 for the PE experiment
 		Discordant=`grep "discordant" ${dir}/align_summary.txt | sed "s/ (.*//" | sed 's/ //g'`
 
 		#count nb of aligned reads
@@ -381,8 +400,11 @@ then
 		#count nb of multiple aligned reads
 		#caution, all reads with more than 40 alignments are not reported by tophat
 		echo "Nb of multiple aligned pairs calculated by TopHat2 | ${Multiple}" >> $OUTDIR/Alignment/tophat_stats_$samplename.txt
-		# statistics calculate by us, and not by tophat, because we see a difference between the statistics given by TopHat2 in align_summary.txt
-		# and the statistics calculated with us
+
+
+		# statistics calculate ourselves, and not by TopHat2, because we see a difference between the statistics given by TopHat2 in align_summary.txt
+		# and the statistics calculated by us
+
 		#count nb of aligned reads
 		Mapped2=$( cut -f 1 $dir/accepted_hits.sam | sort -T $TMP_DIR | uniq | wc -l )
 		echo "Nb of aligned reads | $Mapped2" >> $OUTDIR/Alignment/tophat_stats_${samplename}.txt #(note that 2 reads could have the same sequence)
@@ -436,30 +458,31 @@ $BIN/$SAMTOOLS_VERSION/samtools index $dir/"$samplename"_alignment.bam
 wait
 
 echo "`date`: Tophat analysis : done "
-####################################################################################################
-#HTSeq analysis
-####################################################################################################
+#------------------------------------------------------------------------------------------------------------------
+
+
+
+###################################################################################################################
+# HTSeq analysis
+# Launch htseq-count on the sam file obtained previously by TopHat
+# Results are stored in $OUTDIR/Alignment/$samplename directory
+# htseq-count is launched with intersection-nonempty mode
+# name of the results file : htseq_name.txt
+#------------------------------------------------------------------------------------------------------------------
 echo "****************************************"
 echo "`date`: HTSeq analysis"
 echo "****************************************"
 
-##################
-#Launch HTseq for a sam file obtained previously by Tophat
-#Results are stored in $OUTDIR/Alignment/$samplename directory
-#HTseq is launched with intersection-nonempty mode
-#name of the results file : htseq_name.txt
-###################
-
+# export of the python path where find the eggs.
 export PYTHONPATH=${PYTHONPATH}/${HTSEQ_PYTHONPATH}/
 
 samfile="$dir/${samplename}_alignment.sam"
 
-# reads must be sorted by name for that HTSeq runs (ie the paired reads must be one after the other)
+# paired reads must be sorted by name for that HTSeq runs (ie the paired reads must be one after the other)
+# this sorting is no longer necessary with the new version of htseq-count, which is ok with positions sorting
+# BUT with sorting by position, all the alignment is put in a buffer ... not optimal. So, we keep the option "sort by name"
 if [ "$PAIRED" = "yes" ]
 then
-	# old commands
-	# export LC_ALL=POSIX 
-	# sort -s -k 1,1 -T ${TMP_DIR} $dir/"$samplename"_alignment.sam > $dir/"$samplename"_alignment_sort.sam
 
 	# sort by name with samtools sort
 	$BIN/$SAMTOOLS_VERSION/samtools sort -n $dir/"$samplename"_alignment.bam $dir/"$samplename"_alignment_sort_by_name
@@ -480,17 +503,17 @@ echo "#------------------------------------------------------------------"
 $BIN/$HTSEQ_VERSION/htseq-count -m intersection-nonempty -s $STRANDED ${samfile} $GTF_FILE > $dir/${samplename}_htseq.txt 2>> ${OUTDIR}/Logs/nohup.${samplename}
 
 wait
+#------------------------------------------------------------------------------------------------------------------
 
+
+###################################################################################################################
 # READS DISTRIBUTION
-#########################################################################################
 # Analysis of reads distribution in the exonic , intronic and intergenic regions
 # The script "read_distribution.py" generates a file with
-# the number of reads in each region (intron, intergenic exonic)
+# the density of tags (Tags/Kb) in each region (intron, intergenic exonic)
 # Requires the existence of the gtf reference file in bed format
-# If this bed file does not exist, it is automatically created with the script gtf2bed.pl
-# Scripts necessary to create the bed file are in the quality analysis folder
-
-# ReadsDistribution.sh
+# If this bed file does not exist, it is automatically created with the function "create_bed_from_gtf" in utils.sh
+#------------------------------------------------------------------------------------------------------------------
 
 resultsFileRSeQC=$OUTDIR/Quality/RSeQC/resultsTable_${samplename}.txt
 touch ${resultsFileRSeQC}
@@ -500,17 +523,19 @@ echo "$RSEQC_VERSION command : Reads distribution =>"
 echo "sh $SCRIPTSDIR/src/Quality/ReadsDistribution.sh --config-file ${CONFIG_FILE} --samplename ${samplename} --outdir ${OUTDIR} >> ${OUTDIR}/Logs/nohup.${samplename} &"
 echo "#------------------------------------------------------------------"
 sh $SCRIPTSDIR/src/Quality/ReadsDistribution.sh --config-file ${CONFIG_FILE} --samplename ${samplename} --outdir ${OUTDIR} >> ${OUTDIR}/Logs/nohup.${samplename} &
+#------------------------------------------------------------------------------------------------------------------
 
+
+###################################################################################################################
 # STRAND SPECIFICITY => ONLY FOR STRANDED PROTOCOLS
-#########################################################################################
 # Analysis of strand specificity in the experiment
 # The script "strand_specificity.py" generates a file with
-# the number of reads on each strand or others features (intergenic, overlap, unknown ...)
+# the fraction of reads on each strand (eh the number of reads explained by "++,--" or "+-,-+" for single-read)
 # Requires the existence of the gtf reference file in bed format
-# If this bed file does not exist, it is automatically created with the script gtf2bed.pl
+# If this bed file does not exist, it is automatically created with the function "create_bed_from_gtf" in utils.sh
 # Requires fasta file of the genome use. For this, we use $assembly value to convert in corresponding fasta file
 # the conversion file is in RNAseqReport/Files folder, and is called "genome_conversion.txt"
-
+#------------------------------------------------------------------------------------------------------------------
 if [ "$STRANDED" = "reverse" ]
 then
 	
@@ -525,23 +550,11 @@ fi
 
 wait
 wait
+#------------------------------------------------------------------------------------------------------------------
 
-# cd $OUTDIR
 
-# GENE BODY COVERAGE
-# creates a graph showing the coverage of reads along the genes with RSeQC
-
-# cmd="sh $SCRIPTSDIR/src/Quality/GeneBodyCoverage1sample.sh --config-file ${CONFIG_FILE} --samplename ${samplename} --outdir ${OUTDIR}"
-
-# echo "#------------------------------------------------------------------"
-# echo "$RSEQC_VERSION command : Gene Body Coverage =>"
-# echo "$cmd"
-# echo "#------------------------------------------------------------------"
-
-# ids[${#ids[*]}]=$(run -n "GeneBody_Coverage_${samplename}" -p "$SLURM_PARTITION" -l "${OUTDIR}/Logs/nohup.$samplename" -w "$OUTDIR/Quality/RSeQC" $cmd)
-
+###################################################################################################################
 # INNER DISTANCE => ONLY FOR PAIRED-END PROTOCOLS
-################################################################################################################
 # This module is used to calculate the inner distance (or insert size) between two paired RNA reads. 
 # The distance is the mRNA length between two paired fragments. We first determine the genomic (DNA) size
 # between two paired reads: D_size = read2_start - read1_end, then
@@ -549,8 +562,7 @@ wait
 #    if two paired reads map to different exons:inner distance = D_size - intron_size
 #    if two paired reads map non-exonic region (such as intron and intergenic region): inner distance = D_size
 #    The inner_distance might be a negative value if two fragments were overlapped.
-
-
+#------------------------------------------------------------------------------------------------------------------
 if [ "$PAIRED" = "yes" ]
 then
 
@@ -562,14 +574,16 @@ then
 	sh $SCRIPTSDIR/src/Quality/InnerDistance.sh --config-file ${CONFIG_FILE} --samplename ${samplename} --outdir ${OUTDIR} >> ${OUTDIR}/Logs/nohup.${samplename} &
 
 fi
+#------------------------------------------------------------------------------------------------------------------
 
 cd $OUTDIR
 
+###################################################################################################################
 # OVERALL STATISTICS FOR EACH SAMPLE
-#########################################################################################
 # create a table of all the statistics for each sample
 # e.g sequencing quality statistics, tophat aligment statistics, reads distribution ...
-# available in ${OUTDIR}/quality_analysis/all_statistics_results.txt (statisticsFile)
+# available in ${OUTDIR}/Quality/all_statistics_results.txt (statisticsFile)
+#------------------------------------------------------------------------------------------------------------------
 
 echo "#------------------------------------------------------------------"
 echo "$RSEQC_VERSION command : Overall statistics for $samplename =>"
@@ -579,6 +593,7 @@ echo "#------------------------------------------------------------------"
 sh $SCRIPTSDIR/src/Quality/OverallStatistics.sh --config-file ${CONFIG_FILE} --samplename ${samplename} --fastq-file ${FILE} --resultsRSeQC ${resultsFileRSeQC} --outdir ${OUTDIR} >> ${OUTDIR}/Logs/nohup.${samplename} & 
 
 wait
+#------------------------------------------------------------------------------------------------------------------
 
 # to wait until the script ends.
 rm $OUTDIR/wait_run_end/${samplename}_tmp.txt

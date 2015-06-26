@@ -1,0 +1,48 @@
+\documentclass[a4paper,12pt]{article}
+
+\usepackage[latin1]{inputenc} % proper management of 
+\usepackage[T1]{fontenc} % accents typography and other
+\usepackage{listings} % to allow add of non-formatted text
+\usepackage{float} % allow to define floating objects such as figures and tables
+\usepackage{array} % sets new latex styles of columns
+\restylefloat{table}
+\usepackage{tabularx} % the widths of certain columns are calculated so that the table is is a specified width
+\usepackage{fancyhdr} % management of headers and footers
+%\usepackage{colortbl}
+\usepackage{amsmath,amssymb} % provides various features to facilitate writing math formulas
+\usepackage{graphicx} % provides graphics functions
+\usepackage{pdfpages} % allow to include pdf pages in latex document
+\usepackage{Sweave}
+
+\lstset{basicstyle={\ttfamily\footnotesize},}
+\setlength{\headheight}{47.8499pt}
+\pagestyle{fancy}
+\fancyhead{} % Clear all header fields
+\fancyhead[L]{\includegraphics[width=3cm]{/ifs/home/velt/Git/RNAseqPipeline/src/RNAseqReport/Files/logo.jpg}}%
+\fancyhead[C]{\textbf{Project PROJECT Spikes Report}}%
+
+\newenvironment{vcenterpage}
+{\newpage\vspace*{\fill}}
+{\vspace*{\fill}\par\pagebreak}
+
+%%First page
+
+\newcommand{\FrontCover}{
+\begin{vcenterpage}
+\begin{center}
+\Huge{\textbf{Analysis of Spikes for PROJECT \newline 
+RNA sequencing data \newline}} \\
+\vspace{3cm}
+\normalsize{
+C\'{e}line Keime - Amandine Velt\newline
+Microarray and Sequencing platform\newline}\\
+\vspace{1cm}
+\end{center}
+\end{vcenterpage}
+}
+
+%%FrontCover
+
+\begin{document}
+\FrontCover
+

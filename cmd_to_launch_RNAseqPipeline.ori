@@ -1,0 +1,8 @@
+outdir_run="Path/to/outdir"
+cd $outdir_run
+source config.sh
+
+sbatch --job-name "RNAseqPipeline" -p $SLURM_PARTITION -o "$outdir_run/nohup.allsamples" <<-EOF
+#!/bin/bash
+bash $SCRIPTSDIR/run.sh -o "$outdir_run"
+EOF

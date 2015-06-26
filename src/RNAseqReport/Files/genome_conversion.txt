@@ -1,0 +1,7 @@
+mm9	mmusculus_gene_ensembl	/ifs/illumina/share/Genomes/Mus_musculus/mm9/Fasta/Unmasked/mm9.fa
+hg19	hsapiens_gene_ensembl	/ifs/illumina/share/Genomes/Homo_sapiens/hg19/Fasta/Unmasked/hg19.fa
+mm10	mmusculus_gene_ensembl	/ifs/illumina/share/Genomes/Mus_musculus/mm10/Fasta/Unmasked/mm10.fa
+zv9	drerio_gene_ensembl	/ifs/illumina/share/Genomes/Danio_rerio/zv9/Fasta/Unmasked/Zv9.fa
+rn5	rnorvegicus_gene_ensembl	/ifs/illumina/share/Genomes/Rattus_norvegicus/rn5/Fasta/Unmasked/rn5.fa
+pf3D7	pfalciparum_gene_ensembl	/ifs/illumina/share/Genomes/Plasmodium_falciparum/pf3D7/Fasta/Unmasked/PlasmoDB-10.0_Pfalciparum3D7_Genome.fasta
+WBcel235	celegans_gene_ensembl	/ifs/illumina/share/Genomes/Caenorhabditis_elegans/WBcel235/Fasta/Unmasked/WBcel235.fa

@@ -1,0 +1,11 @@
+Sample_ID	Sample_name	Condition	Contrast1	Contrast2
+Sample1	Sample name1	Replicat1	1	1
+Sample2	Sample name2	Replicat1	1	NA
+Sample3	Sample name3	Replicat2	-1	-1
+Sample4	Sample name4	Replicat2	-1	NA
+
+#Contrast1 => comparison with replicates
+#Contrast2 => comparison without considering replicates
+#Separator : \t
+# If library type is paired-end, a line of the design file correspond to a pair of fastq (eg in design file, # # the sample_ID column of ${samplename}.R1.fastq.gz and ${samplename}.R2.fastq.gz is ${samplename}).
+# If library contains spikes, add "\_without_Spikes" at the end of sample_ID (indeed, spike's sequences are removed # from the raw fastq file and the new fastq file, without spikes, is called ${sample_ID}_noSpikes.fastq)
